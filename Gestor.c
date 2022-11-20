@@ -7,96 +7,85 @@
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdbool.h>
+#include "ExtraerArgumentos.h"
 #include "Usuario.h"
-#define MAX_NUM 80 // maximo numero de usuarios
+#include "Tweet.h"
+#define MAX_Usuarios 80
 
 //Variables compartidas
-int usuarios[MAX_NUM][MAX_NUM];
-user users[MAX_NUM];
-int t, contUsuarios = 0;
-typedef struct Datos //estructuras con el nombre del pipe principal y el numero de usuarios conectados
-{
-    int num;
-    char nomPipe[20]; 
-} data;
+arg argumentos; ///< Estructura de los argumentos recibidos por consola
+int usuariosConectados = 0;
+int tweetsEnviados = 0;
+int tweetsRecibidos = 0;
+user clientes[MAX_Usuarios];///< Arreglo de los clientes conectados
+int PIDs [MAX_Usuarios]; //Arreglo de los pids de los clientes conectados
+
+
 
 //captura de Signal
 typedef void (*sighandler_t)(int);
-
 sighandler_t signalHandler(void)
 {
-  printf ("Cantidad de usuarios: %d\n", contUsuarios);
-  alarm(t);
+    printf("\n ESTADISTICAS \n");
+    printf("Usuarios conectados: %d\n", usuariosConectados);
+    printf("Tweets enviados: %d\n", tweetsEnviados); 
+    printf("Tweets recibidos: %d\n", tweetsRecibidos);
+    alarm(argumentos.time);
 }
 
 //Funciones
 int CrearPipeLectura(char *pipe);
 int CrearPipeEscritura(char *pipe);
-void *OperacionGestor(data *d);
+void *OperacionGestor(void*);
 void *Estadisticas(int*); 
+void cargarRelaciones(char *file);
+void imprimirRelaciones();
+void acoplado(tw *tweet);
 
 int main(int argc,char **argv)
 {    
-    //Verificar argumentos
+   //Verificar argumentos
     if(argc!=11) 
     {
-        printf("Formato debe ser $./Gestor -n Num -r Relaciones -m modo -t time -p pipeNom");
+        printf("Error en la cantidad de argumentos, Formato: $./Gestor -n Num -r Relaciones -m modo -t time -p pipeNom");
         exit(1);
     }
+    else
+      argumentos = extraerArgumentos(argc, argv);
 
-    // limitar la invocación del gestor a solo dos modos
-    if ((strcmp(argv[6],"A")==1) || (strcmp(argv[6],"D")==1))
+    int i,j;
+    //inicializar pids
+    for ( i = 0; i < argumentos.num; i++)
     {
-        printf("modo: 'A' Para acoplado o 'D' para desacoplado\n");
-        exit(1);
+        PIDs[i] = -1;
     }
 
-    //variables para leer archivo
-    int num = atoi(argv[2]);  //numero de usuarios
-    t = atoi(argv[8]); // time para estadisticas
-    data d;
-    d.num = num;
-    strcpy(d.nomPipe,argv[10]);
-    //int usuarios[num][num];
-    int i=0,j;
+    printf("Gestor Iniciado\n");  
 
-    FILE *relaciones = fopen(argv[4],"r");
+    //inicializar clientes
     
-    if (relaciones == NULL)
-    {
-        printf("El archivo no pudo abrirse, vuelva a Intentarlo");
-        exit(1);
-    }
-    while (!feof(relaciones))
-    {    
-        for(j=0; j<num; j++)
-        {
-            fscanf(relaciones,"%i ",&usuarios[i][j]);
-        }
-        j++; 
-        fscanf(relaciones,"\n");            
-    }
-    fclose(relaciones);
-    
-    //user users[num];
-
-    for(i=0; i<num; i++)
-    {
-        users[i].id = i+1;
-        users[i].enLinea = 0;
-        sprintf(users[i].pipe, "pipe%d", users[i].id);
+    for (i = 0; i < argumentos.num; ++i) {
+        clientes[i].id = i+1; // Inicializar el id
+        clientes[i].enLinea = false; // Inicializar enLinea en false
+        clientes[i].cantTweets = 0; // Inicializar la cantidad de tweets en 0
+        sprintf(clientes[i].pipe, "pipe%d", clientes[i].id);
+        //clientes[i].seguidos = malloc(sizeof(int) * argumentos.num); // Inicializar suscripciones
     }
 
-    //utilizar Hilos y Signals
+    cargarRelaciones(argumentos.relaciones);
+    //imprimirRelaciones();
+
+    //Uso de Hilos y Signals
     pthread_t thread1, thread2;
     signal (SIGALRM, (sighandler_t)signalHandler);
     
-    if (pthread_create(&thread1, NULL, (void*)OperacionGestor,(void*)&d)) 
+    if (pthread_create(&thread1, NULL, (void*)OperacionGestor,NULL)) 
     {
          perror("Error creando hilo 1");
          exit(-1);
     }
-    if (pthread_create(&thread2, NULL, (void*)Estadisticas,(void*)&t)) 
+    if (pthread_create(&thread2, NULL, (void*)Estadisticas,(void*)&argumentos.time)) 
     {
          perror("Error creando hilo 2");
          exit(-1);
@@ -105,137 +94,194 @@ int main(int argc,char **argv)
     pthread_join(thread2,NULL);
 
 
-
-    /*//Variables para el pipe
-    int fd, fd1, p;
-    user u;
-    mode_t fifo_mode = S_IRUSR|S_IWUSR;
-    
-    //creacion del pipe
-    if (mkfifo(argv[10], fifo_mode) == -1)
-    {
-        perror("Server mkfifo");
-        exit(1);
-    }
-    fd = open(argv[10],O_RDONLY);
-    
-    int bn;
-    int respuesta;
-    while(1)
-    {
-      p = read (fd, &u, sizeof(u));
-      if (p == -1)
-      {
-          perror("proceso lector:");
-          exit(1);
-      }
-      else{
-          printf("Funciono %d", u.id);
-      }
-      //  printf("Funciono, pipe desde gestor: %s\n",u.pipe );
-      //verificar usuario que llega por el pipe
-
-      bn = 0;
-      for(i=0; i<num; i++)
-      {
-          //verificar que el usuario exista y no este en linea
-          if(users[i].id == u.id && users[i].enLinea == 0)
-          {
-              users[i].enLinea = u.enLinea;
-              strcpy(users[i].pipe, u.pipe);
-              bn = 1;
-              break;
-          }
-      }
-
-      //pipe de respuesta
-      
-      fd1 = CrearPipeEscritura(u.pipe);
-      if(bn)
-      {
-          respuesta = 1;
-          write (fd1, &respuesta, sizeof(respuesta));
-      }
-      else
-      {
-          respuesta = 0;
-          write (fd1, &respuesta, sizeof(respuesta));
-      }
-      unlink(u.pipe);
-    }*/
     return 0;
 }
-/*Nombre: OperacionGestor 
-  Entradas: Estructuras de datos con el nombre del pipe principal y la cantidad de usuarios
-  Objetivo: Realizar todas las operaciones del gestor
-  Salida: 
-*/
-void *OperacionGestor(data *d)
+/// @brief Función que se encarga de realizar todas las operaciones del gestor
+void *OperacionGestor(void *a)
 {
-  //Variables para el pipe
-    int fd, fd1, p,i;
-    user u;
+  
+    int fd, fd1, p,i;//Variables para el pipe
+    user cliente;
+    tw tweet;
     mode_t fifo_mode = S_IRUSR|S_IWUSR;
-    
+    int tipo;// acoplado o desacoplado
+    if(argumentos.modo == 'A') tipo = 0;
+    else tipo = 1;
+
+    remove(argumentos.pipeNom); // Borrar contenido basura del pipe
+    //Crear el primer pipe nominal de nombre argumentos.pipeNom y abrirlo en modo escritura. Se usara para asignar un identificador y un pipe a cada usuario que se conecte al sistema.
+    unlink(argumentos.pipeNom); // Eliminar el pipe si existe
     //creacion del pipe
-    if (mkfifo(d->nomPipe, fifo_mode) == -1)
+    if (mkfifo(argumentos.pipeNom, fifo_mode) == -1)
     {
         perror("Server mkfifo");
         exit(1);
     }
-    fd = open(d->nomPipe,O_RDONLY);
+    fd = open(argumentos.pipeNom,O_RDONLY);
     
-    int bn;
-    int respuesta;
+    int bn; //bandera
+    int respuesta; // respuesta a enviar
+    int opcion;// opcion recibida
+    char pid[30]; //pid del proceso cliente
+    char salida[20];
+    char buffer[10]; ///< Buffer para almacenar lo que se lee del pipe
     while(1)
     {
-      p = read (fd, &u, sizeof(u));
-      if (p == -1)
-      {
-          perror("proceso lector:");
-          exit(1);
-      }
-      else{
-          printf("Funciono %d", u.id);
-      }
-      //  printf("Funciono, pipe desde gestor: %s\n",u.pipe );
-      //verificar usuario que llega por el pipe
+        p = read (fd, &opcion, sizeof(int));
+        if (p == -1)
+        {
+            perror("proceso lector:");
+            exit(1);
+        }
+     //   else{
+       //     printf("Peticion de usuario %d\n", cliente.id);
+        //}
+        
+        switch(opcion)
+        {              
+            case 0: p = read (fd, pid, 30);
+                    if (p == -1)
+                    {
+                        perror("proceso lector:");
+                        exit(1);
+                    }        
+                    char *token = strtok(pid,"d");
+                    token = strtok(NULL, "d");  
+                    PIDs[cliente.id-1] = atoi(token); 
+                    printf("pid : %d ", PIDs[cliente.id-1]);
+                    /* for ( i = 0; i < argumentos.num; i++)
+                    {
+                        printf("pid : %d ", PIDs[i]);
+                    }*/
+                    p = read(fd, &cliente, sizeof(cliente));
+                    if (p == -1) { 
+                        perror("Error al leer el pipe");
+                        exit(EXIT_FAILURE);
+                    }
+                    
+                    bn = 0;
+                    for(i=0; i<argumentos.num; i++)
+                    {
+                        //verificar que el usuario exista y no este en linea
+                        if(clientes[i].id == cliente.id && clientes[i].enLinea == 0)
+                        {
+                            clientes[i].enLinea = cliente.enLinea;
+                            strcpy(clientes[i].pipe, cliente.pipe);
+                            bn = 1;//cambiar el valor de la bandera
+                            usuariosConectados++;
+                            printf("Usuario %d conectado\n", cliente.id);
+                            break;
+                        }
+                    }
 
-      bn = 0;
-      for(i=0; i<d->num; i++)
-      {
-          //verificar que el usuario exista y no este en linea
-          if(users[i].id == u.id && users[i].enLinea == 0)
-          {
-              users[i].enLinea = u.enLinea;
-              strcpy(users[i].pipe, u.pipe);
-              bn = 1;
-              contUsuarios++;
-              break;
-          }
-      }
+                    fd1 = CrearPipeEscritura(cliente.pipe);
+                    if(bn)
+                    {
+                        respuesta = 1;
+                        write (fd1, &respuesta, sizeof(respuesta));
+                        write(fd1, &tipo, sizeof(int));
+                    }
+                    else
+                    {
+                        respuesta = 0;
+                        write (fd1, &respuesta, sizeof(respuesta));
+                    }
+                    close(fd1);
+                    break;
 
-      //pipe de respuesta
-      
-      fd1 = CrearPipeEscritura(u.pipe);
-      if(bn)
-      {
-          respuesta = 1;
-          write (fd1, &respuesta, sizeof(respuesta));
-      }
-      else
-      {
-          respuesta = 0;
-          write (fd1, &respuesta, sizeof(respuesta));
-      }
-      unlink(u.pipe);
+            case 1:p = read(fd, buffer, 10);
+                    if (p == -1) { 
+                        perror("Error al leer el pipe");
+                        exit(EXIT_FAILURE);
+                    }
+                    char *token1 = strtok(buffer,",");
+                    int idCliente = atoi(token1); // id del cliente que envio la solicitud
+                    token1 = strtok(NULL, ","); 
+                    int idFollow = atoi(token1);    //id del cliente a seguir
+                    
+                	printf("\nCliente %d quiere seguir a %d: \n", idCliente,idFollow);
+                    if(clientes[idCliente-1].seguidos[idFollow-1] == 0){ //comprobar si lo sigue
+                        clientes[idCliente-1].seguidos[idFollow-1] = 1; //seguirlo
+                        strcpy(salida, "Solicitud Exitosa");
+                    }else
+                        strcpy(salida, "Solicitud Errada");
+
+                    fd1 = CrearPipeEscritura(clientes[idCliente-1].pipe);
+                    write (fd1, salida, 20);
+                    printf("\nNuevas Relaciones:\n");
+                    imprimirRelaciones();
+                    strcpy(buffer, "");
+                    close(fd1);
+                    break;
+            case 2:	p = read(fd, buffer, 10);
+                    if (p == -1) { 
+                        perror("Error al leer el pipe");
+                        exit(EXIT_FAILURE);
+                    }
+                    char *token2 = strtok(buffer,",");
+                    int idCliente2 = atoi(token2); // id del cliente que envio la solicitud
+                    token2 = strtok(NULL, ","); 
+                    int idUnfollow = atoi(token2);    //id del cliente a seguir
+                    
+                	printf("\nCliente %d quiere dejar de seguir a %d: \n", idCliente2,idUnfollow);
+                    if(clientes[idCliente2-1].seguidos[idUnfollow-1] == 1){ //comprobar si lo sigue
+                        clientes[idCliente2-1].seguidos[idUnfollow-1] = 0; //seguirlo
+                        strcpy(salida, "Solicitud Exitosa");
+                    }else
+                        strcpy(salida, "Solicitud Errada");
+
+                    fd1 = CrearPipeEscritura(clientes[idCliente2-1].pipe);
+                    write (fd1, salida, 20);
+                    printf("\nNuevas Relaciones:\n");
+                    imprimirRelaciones();
+                    close(fd1);
+                    strcpy(buffer, "");
+                    break;
+            case 3: p = read(fd, &tweet,sizeof(tweet)); 
+                    if (p == -1) { 
+                        perror("Error al leer el pipe");
+                        exit(EXIT_FAILURE);
+                    }
+                    printf("mensaje %s\n", tweet.mensaje);
+                    tweetsRecibidos++;
+                    
+                    if (tipo == 1)// modo Desacoplado
+                        for (i = 0; i < argumentos.num; i++)
+                        {
+                           if(clientes[i].seguidos[tweet.id-1] == 1){ //seguidores del cliente que envio el tweet;
+                                clientes[i].tweets[clientes[i].cantTweets] = tweet;// agregar el tweet al arreglo 
+                                clientes[i].cantTweets++; // incrementar la cantidad de tweets
+                                if(clientes[i].enLinea)// verificar que está en linea
+                                { 
+                                    printf("pid %d\n", PIDs[i]);
+                                    kill (PIDs[i], SIGUSR1);// enviar la señal para que notificar que tienen un nuevo tweet
+                                }
+                            }
+                    }
+                    break;
+            case 4: char buffer2[6];
+                    p = read(fd, buffer2, 6);
+                    if (p == -1) { 
+                        perror("Error al leer el pipe");
+                        exit(EXIT_FAILURE);
+                    }
+                    char *token3 = strtok(buffer2,",");
+                    token3 = strtok(NULL, ","); 
+                    int idRecuperar = atoi(token3);    //id del cliente que envio la solicitud
+                    
+                    user clientRecuperar = clientes[idRecuperar-1]; 
+                    //printf("id:%d",clientRecuperar.id);
+                    fd1 = CrearPipeEscritura(clientRecuperar.pipe);
+                    write (fd1, &clientRecuperar, sizeof(clientRecuperar));
+                    tweetsEnviados++;
+                    close(fd1);
+
+        }
     }
 }
-/*Nombre: Estadisticas 
-  Entradas: tiempo que espera para enviar la signal
-  Objetivo: Enviar una signal para imprimir las estadisticas de usuarios conectastos y tweets enviados
-  Salida: 
-*/
+
+/// @brief Funcion para Enviar una signal para imprimir las estadisticas de usuarios conectastos y tweets enviados
+/// @param t tiempo de espera
 void *Estadisticas(int *t)
 {
   while(1)
@@ -244,11 +290,9 @@ void *Estadisticas(int *t)
     pause();
   }
 }
-/*Nombre: CrearPipe 
-  Entradas: Nombre del pipe
-  Objetivo: Abrir y leer el pipe 
-  Salida: El fd del pipe
-*/
+/// @brief Funcion para Abrir y leer en el pipe
+/// @param pipe Nombre del pipe
+/// @param return file descriptor 
 int CrearPipeLectura(char *pipe) 
 {
   int i, creado, fd;
@@ -266,11 +310,10 @@ int CrearPipeLectura(char *pipe)
   printf ("Abrio el pipe\n");
   return fd;
 }
-/*Nombre: CrearPipe 
-  Entradas: Nombre del pipe
-  Objetivo: Abrir y escribir en el pipe 
-  Salida: El fd del pipe
-*/
+
+/// @brief Funcion para Abrir y escribir en el pipe
+/// @param pipe Nombre del pipe
+/// @param return file descriptor 
 int CrearPipeEscritura(char *pipe) 
 {
   int i, creado, fd;
@@ -286,4 +329,78 @@ int CrearPipeEscritura(char *pipe)
   printf ("Abrio el pipe\n");
 
   return fd;
+}
+
+/// @brief Funcion para cargar las relaciones del archivo
+/// @param file Nombre del archivo
+void cargarRelaciones(char *file){
+
+    FILE *fp; ///< Archivo de relaciones
+    char line[500]; ///< Linea del archivo
+    
+    fp = fopen(file, "r"); // Abrir archivo de relaciones
+    if (fp == NULL){
+        perror("Error al abrir el archivo de relaciones\n");
+        exit(1);
+    }
+        
+    int i = 0; // # de lineas
+    while (fgets(line,500,fp)) { // Leer linea por linea
+        char *token; ///< Token de la linea
+        //printf("\nline:%s\n",line);
+        token = strtok(line, "	"); // Extraer el primer token
+        //printf("\n token:%s\n",token); 
+
+        int j = 0; ///< # columnas
+        while(token != NULL){
+            
+            //printf("\ntoken : %s\n",token); // El usuario i sigue al usuario j  
+            if (atoi(token) == 1){ // Si el token es 1
+                clientes[i].seguidos[j] = 1;
+                 //printf("fila: %d columna %d \n",i, j); // El usuario i sigue al usuario j
+            }
+            else{ 
+                clientes[i].seguidos[j] = 0; // El usuario i no sigue al usuario j
+            }
+
+
+            token = strtok(NULL, "	"); // Extraer el siguiente token
+            j++; 
+        }
+        i++;
+    }
+    fclose(fp);
+}
+/// @brief Funcion para imprimir las relaciones de los usuarios
+void imprimirRelaciones(){
+    int i,j;
+    for (i = 0; i < argumentos.num; ++i) {
+        printf("\nUsuario %d\n", clientes[i].id); 
+        printf("En linea %d\n", clientes[i].enLinea);  
+        printf("Seguidos: ");  
+        for (j = 0; j < argumentos.num; j++)
+        {
+            if(clientes[i].seguidos[j]==1)
+                printf("%d ",j+1);
+        }
+        printf("\n");  
+    }
+}
+void acoplado(tw *tweet){
+
+    char mensaje[200];
+    int i;
+    strcpy(mensaje, tweet->mensaje);
+    for (i = 0; i < argumentos.num; i++)
+    {
+        if(clientes[i].seguidos[tweet->id-1] == 1 && clientes[i].enLinea){ //seguidores del cliente que envio el tweet;
+            int pipe = CrearPipeEscritura(clientes[i].pipe);
+            write (pipe, mensaje, 200);
+            kill (PIDs[i], SIGUSR1);
+            close(pipe);
+        }
+    }
+}
+void desAcoplado(){
+
 }
