@@ -23,13 +23,23 @@ void *OperacionCliente(void *a);
 arg argumentos; ///< Estructura de los argumentos recibidos por consola
 char mensaje[200];///< Mensaje del usuario que sigue
 user cliente; ///< Estructura cliente
+int tipo = 0; // Acoplado o Desacoplado
+int fd,fd1;//file descriptor
 
 //captura de señal
 typedef void (*sighandler_t)(int);
 
 sighandler_t signalHandler (void)
 {
-  printf ("\nUn usuario que sigues publico un nuevo Tweet \n");
+  if (tipo == 1)//Modo Desacoplado
+    printf ("\nUn usuario que sigues publico un nuevo Tweet \n");
+  if(tipo == 0)//Modo Acoplado
+  {
+    printf("\nPIPe:%s\n", cliente.pipe);
+    read(fd1, mensaje, 200);
+    printf("\nNuevo Tweet: %s\n",mensaje);
+    close(fd1);
+  }
 }
 
 int main(int argc, char **argv)
@@ -48,9 +58,8 @@ int main(int argc, char **argv)
     int salir = 0;
     int peticion = 0;
     int opcion;
-    int tipo;
    //variables pipes
-    int  fd, fd1;
+    //int  fd, fd1;
     mode_t fifo_mode = S_IRUSR | S_IWUSR;
 
     fd = CrearPipeEscritura(argumentos.pipeNom);
@@ -74,8 +83,8 @@ int main(int argc, char **argv)
     }
     int gPid = getpid();// pid del proceso
     char pid[30];
-//  printf("\n\n pid: %d\n",pid);
-//enviar el PID
+    //  printf("\n\n pid: %d\n",pid);
+    //enviar el PID
     sprintf(pid, "pid%d", gPid);
     w = write(fd, pid, 30);
     if (w == -1)
@@ -104,16 +113,14 @@ int main(int argc, char **argv)
       perror("proceso lector:");
       exit(1);
     }
-   
-   
-   // Se lee un mensaje por el segundo pipe.
-    //printf("El proceso cliente termina y lee %d \n", respuesta);
+    // Se lee un mensaje por el segundo pipe.
+    printf("Respuesta: %d, Tipo: %d \n", respuesta, tipo);
     char salida[20];//Mensaje de Salida enviado por gestor
     char solicitud[10];
+    int i; //iterador
     if(respuesta)
     {
       do{
-        r = read(fd1, mensaje, 200);
         opcion = Menu(tipo);
         if(tipo==0 && opcion==5)
           opcion=-1;
@@ -182,10 +189,11 @@ int main(int argc, char **argv)
                       exit(1);
                   }
                   printf("\n");
-                  for (i = 0; i < clienteRecuperado.cantTweets; i++)
-                  {
-                      printf("\nEnviado por %d: %s\n",clienteRecuperado.tweets[i].id, clienteRecuperado.tweets[i].mensaje);
-                  }
+                  if(clienteRecuperado.cantTweets > 0)
+                      for (i = 0; i < clienteRecuperado.cantTweets; i++)
+                        printf("\nid %d tweet: %s\n",clienteRecuperado.tweets[i].id, clienteRecuperado.tweets[i].mensaje);
+                  else
+                       printf("\nNo hay mensajes\n");
                   
                   close(fd1);
                   break;
@@ -269,18 +277,4 @@ int CrearPipeLectura(char *pipe) {
 
   printf ("Abrio el pipe\n");
   return fd;
-}
-
-/// @brief Función que se encarga de recibir los tweets enviados por los usuarios seguidos
-void *mensajesTweet(void *a){
-    while(1){
-      int pipe = CrearPipeLectura(cliente.pipe);
-      int r = read(pipe, mensaje, 200);
-      if (r == -1)
-      {
-        perror("proceso lector");
-        exit(1);
-      }
-      printf("mensaje %s", mensaje);
-    }
 }

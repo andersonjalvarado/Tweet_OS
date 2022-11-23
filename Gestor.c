@@ -21,8 +21,6 @@ int tweetsRecibidos = 0;
 user clientes[MAX_Usuarios];///< Arreglo de los clientes conectados
 int PIDs [MAX_Usuarios]; //Arreglo de los pids de los clientes conectados
 
-
-
 //captura de Signal
 typedef void (*sighandler_t)(int);
 sighandler_t signalHandler(void)
@@ -41,7 +39,6 @@ void *OperacionGestor(void*);
 void *Estadisticas(int*); 
 void cargarRelaciones(char *file);
 void imprimirRelaciones();
-void acoplado(tw *tweet);
 
 int main(int argc,char **argv)
 {    
@@ -99,8 +96,8 @@ int main(int argc,char **argv)
 /// @brief Función que se encarga de realizar todas las operaciones del gestor
 void *OperacionGestor(void *a)
 {
-  
-    int fd, fd1, p,i;//Variables para el pipe
+    int fd, fd1, p;//Variables para el pipe
+    int i;// iterador
     user cliente;
     tw tweet;
     mode_t fifo_mode = S_IRUSR|S_IWUSR;
@@ -120,7 +117,8 @@ void *OperacionGestor(void *a)
     fd = open(argumentos.pipeNom,O_RDONLY);
     
     int bn; //bandera
-    int respuesta; // respuesta a enviar
+    int respuesta; 
+    char r[4]; // respuesta a enviar
     int opcion;// opcion recibida
     char pid[30]; //pid del proceso cliente
     char salida[20];
@@ -133,9 +131,9 @@ void *OperacionGestor(void *a)
             perror("proceso lector:");
             exit(1);
         }
-     //   else{
-       //     printf("Peticion de usuario %d\n", cliente.id);
-        //}
+        else{
+            printf("Opcion %d\n", opcion);
+        }
         
         switch(opcion)
         {              
@@ -147,18 +145,18 @@ void *OperacionGestor(void *a)
                     }        
                     char *token = strtok(pid,"d");
                     token = strtok(NULL, "d");  
-                    PIDs[cliente.id-1] = atoi(token); 
-                    printf("pid : %d ", PIDs[cliente.id-1]);
-                    /* for ( i = 0; i < argumentos.num; i++)
-                    {
-                        printf("pid : %d ", PIDs[i]);
-                    }*/
+                    
                     p = read(fd, &cliente, sizeof(cliente));
                     if (p == -1) { 
                         perror("Error al leer el pipe");
                         exit(EXIT_FAILURE);
                     }
-                    
+                    PIDs[cliente.id-1] = atoi(token); 
+                    printf("id: %d, pos: %d, pid : %d ", cliente.id, cliente.id -1, PIDs[cliente.id-1]);
+                     //for ( i = 0; i < argumentos.num; i++)
+                   // {
+                     //   printf("pid : %d ", PIDs[i]);
+                   // }
                     bn = 0;
                     for(i=0; i<argumentos.num; i++)
                     {
@@ -173,13 +171,22 @@ void *OperacionGestor(void *a)
                             break;
                         }
                     }
-
+                    int id = cliente.id;
+                    user clienteTweets = clientes[id];
                     fd1 = CrearPipeEscritura(cliente.pipe);
                     if(bn)
                     {
                         respuesta = 1;
+                        //write (fd1, &clienteTweets, sizeof(clienteTweets));
                         write (fd1, &respuesta, sizeof(respuesta));
                         write(fd1, &tipo, sizeof(int));
+                       if(clienteTweets.cantTweets > 0)
+                        {
+                            tweetsEnviados+=clienteTweets.cantTweets;// incrementar los tweets enviados
+                            clientes[id].cantTweets=0;//reiniciar la cantidad de tweets almacenados
+                            printf("Envindo Tweets pendientes\n");
+                        }
+                             
                     }
                     else
                     {
@@ -200,7 +207,10 @@ void *OperacionGestor(void *a)
                     int idFollow = atoi(token1);    //id del cliente a seguir
                     
                 	printf("\nCliente %d quiere seguir a %d: \n", idCliente,idFollow);
-                    if(clientes[idCliente-1].seguidos[idFollow-1] == 0){ //comprobar si lo sigue
+                    if(idCliente == idFollow){ //comprobar si no es el mismo id
+                        strcpy(salida, "Solicitud Errada");
+                    }
+                    else if(clientes[idCliente-1].seguidos[idFollow-1] == 0){ //comprobar si lo sigue
                         clientes[idCliente-1].seguidos[idFollow-1] = 1; //seguirlo
                         strcpy(salida, "Solicitud Exitosa");
                     }else
@@ -224,8 +234,12 @@ void *OperacionGestor(void *a)
                     int idUnfollow = atoi(token2);    //id del cliente a seguir
                     
                 	printf("\nCliente %d quiere dejar de seguir a %d: \n", idCliente2,idUnfollow);
-                    if(clientes[idCliente2-1].seguidos[idUnfollow-1] == 1){ //comprobar si lo sigue
-                        clientes[idCliente2-1].seguidos[idUnfollow-1] = 0; //seguirlo
+                    
+                    if(idCliente2 == idUnfollow){ //comprobar si no es el mismo id
+                        strcpy(salida, "Solicitud Errada");
+                    }
+                    else if(clientes[idCliente2-1].seguidos[idUnfollow-1] == 1){ //comprobar si lo sigue
+                        clientes[idCliente2-1].seguidos[idUnfollow-1] = 0; //dejar de seguirlo
                         strcpy(salida, "Solicitud Exitosa");
                     }else
                         strcpy(salida, "Solicitud Errada");
@@ -242,22 +256,55 @@ void *OperacionGestor(void *a)
                         perror("Error al leer el pipe");
                         exit(EXIT_FAILURE);
                     }
-                    printf("mensaje %s\n", tweet.mensaje);
+                    printf("%d envia el siguiente mensaje: %s\n", tweet.id, tweet.mensaje);
                     tweetsRecibidos++;
                     
                     if (tipo == 1)// modo Desacoplado
+                    {
                         for (i = 0; i < argumentos.num; i++)
                         {
+                           //printf("%d pid : %d \n", i, PIDs[i]);
                            if(clientes[i].seguidos[tweet.id-1] == 1){ //seguidores del cliente que envio el tweet;
+                                //printf("id seguidor: %d",clientes[i].id);
+                                printf("id %d - pid %d, se guarda el tweet %s\n", clientes[i].id, PIDs[i], tweet.mensaje);
                                 clientes[i].tweets[clientes[i].cantTweets] = tweet;// agregar el tweet al arreglo 
                                 clientes[i].cantTweets++; // incrementar la cantidad de tweets
-                                if(clientes[i].enLinea)// verificar que está en linea
+                                if(clientes[i].enLinea && PIDs[i] != -1)// verificar que está en linea
                                 { 
                                     printf("pid %d\n", PIDs[i]);
-                                    kill (PIDs[i], SIGUSR1);// enviar la señal para que notificar que tienen un nuevo tweet
+                                    kill (PIDs[i], SIGUSR1);// enviar la señal para notificar que tienen un nuevo tweet
                                 }
                             }
-                    }
+                        }
+                    }    
+                    else if (tipo == 0) //modo Acoplado
+                    {
+                        char mensaje[200];
+                        strcpy(mensaje, tweet.mensaje);
+                        for (i = 0; i < argumentos.num; i++)
+                        {    
+                            //printf("%d pid : %d \n", i, PIDs[i]);
+                            if(clientes[i].seguidos[tweet.id-1] == 1){ //seguidores del cliente que envio el tweet;
+                                //printf("id seguidor: %d",clientes[i].id);
+                                
+                                if(clientes[i].enLinea) // cliente en linea
+                                {
+                                    fd1 = CrearPipeEscritura(clientes[i].pipe);// crear el pipe de cada cliente
+                                    write (fd1, mensaje, 200);//enviar el mensaje
+                                    printf("id %d - pid %d, se le envia el tweet: %s\n", clientes[i].id, PIDs[i], mensaje);
+                                    kill (PIDs[i], SIGUSR1);// enviar la señal para notificar que tienen un nuevo tweet
+                                    tweetsEnviados++;// incrementar los tweets enviados
+                                    close(fd1);         
+                                }         
+                                if(!clientes[i].enLinea)// si no está en linea agregar el tweet al arreglo
+                                { 
+                                    clientes[i].tweets[clientes[i].cantTweets] = tweet;// agregar el tweet al arreglo
+                                    printf("id %d, se le guarda el tweet %s\n", clientes[i].id, clientes[i].tweets[clientes[i].cantTweets].mensaje);
+                                    clientes[i].cantTweets++; // incrementar la cantidad de tweets                                   
+                                }
+                            }
+                        }
+                    }   
                     break;
             case 4: char buffer2[6];
                     p = read(fd, buffer2, 6);
@@ -267,14 +314,33 @@ void *OperacionGestor(void *a)
                     }
                     char *token3 = strtok(buffer2,",");
                     token3 = strtok(NULL, ","); 
-                    int idRecuperar = atoi(token3);    //id del cliente que envio la solicitud
+                    int idRecuperar = atoi(token3); //id del cliente que envio la solicitud
                     
                     user clientRecuperar = clientes[idRecuperar-1]; 
-                    //printf("id:%d",clientRecuperar.id);
+                    printf("id:%d",clientRecuperar.id);
                     fd1 = CrearPipeEscritura(clientRecuperar.pipe);
                     write (fd1, &clientRecuperar, sizeof(clientRecuperar));
-                    tweetsEnviados++;
+                    
+                    if (clientes[idRecuperar-1].cantTweets > 0){
+                        clientes[idRecuperar-1].cantTweets = 0;
+                        tweetsEnviados++;// incrementar los tweets enviados 
+                    } 
                     close(fd1);
+                    break;
+            case 5: printf("Desconectado");
+                    char buffer3[3];
+                    p = read(fd, buffer3, 3);
+                    if (p == -1) { 
+                        perror("Error al leer el pipe");
+                        exit(EXIT_FAILURE);
+                    }
+                    
+                    int idSalir = atoi(buffer3);
+                    unlink(clientes[idSalir].pipe);//eliminar el pipe
+                    clientes[idSalir-1].enLinea = 0;//poner fuera de linea
+                    printf("id %d Desconectado",idSalir);
+                    //kill (PIDs[idSalir-1], SIGKILL);//terminar el proceso con una señal
+                    break;
 
         }
     }
@@ -385,22 +451,4 @@ void imprimirRelaciones(){
         }
         printf("\n");  
     }
-}
-void acoplado(tw *tweet){
-
-    char mensaje[200];
-    int i;
-    strcpy(mensaje, tweet->mensaje);
-    for (i = 0; i < argumentos.num; i++)
-    {
-        if(clientes[i].seguidos[tweet->id-1] == 1 && clientes[i].enLinea){ //seguidores del cliente que envio el tweet;
-            int pipe = CrearPipeEscritura(clientes[i].pipe);
-            write (pipe, mensaje, 200);
-            kill (PIDs[i], SIGUSR1);
-            close(pipe);
-        }
-    }
-}
-void desAcoplado(){
-
 }

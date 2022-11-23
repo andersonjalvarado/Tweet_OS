@@ -1,4 +1,4 @@
-all: Cliente Gestor
+all: Cliente Gestor cliente
 
 server: gestor.o usuario.h ExtraerArgumentos.h Tweet.h
 	gcc -o gestor gestor.o -lpthread
@@ -6,8 +6,8 @@ server: gestor.o usuario.h ExtraerArgumentos.h Tweet.h
 server.o: Gestor.c usuario.h ExtraerArgumentos.h Tweet.h
 	gcc -c Gestor.c
 
-client: cliente.o usuario.h ExtraerArgumentos.h Tweet.h
-	gcc -o cliente cliente.o
+Client: cliente.o usuario.h ExtraerArgumentos.h Tweet.h
+	gcc -o cliente cliente.o -lpthread
 
-client.o: Cliente.c usuario.h ExtraerArgumentos.h Tweet.h
-	gcc -c Client.c
+Client.o: cliente.c usuario.h ExtraerArgumentos.h Tweet.h
+	gcc -c client.c
