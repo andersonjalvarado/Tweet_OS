@@ -21,8 +21,9 @@ int tweetsEnviados = 0;
 int tweetsRecibidos = 0;
 user clientes[MAX_Usuarios];///< Arreglo de los clientes conectados
 int PIDs [MAX_Usuarios]; //Arreglo de los pids de los clientes conectados
+int fd, fd1, p;//Variables para el pipe
 
-//captura de Signal
+//captura de Signals
 typedef void (*sighandler_t)(int);
 sighandler_t signalHandler(void)
 {
@@ -32,7 +33,21 @@ sighandler_t signalHandler(void)
     printf("Tweets recibidos: %d\n", tweetsRecibidos);
     alarm(argumentos.time);
 }
-
+typedef void (*sighandler_t)(int);
+sighandler_t signalHandlerKill(void)
+{
+    printf("\n GESTOR FINALIZADO \n");
+    unlink(argumentos.pipeNom); // eliminar pipe
+    int i;
+    
+    for (i = 0; i < argumentos.num; i++)
+    {
+        unlink(clientes[i].pipe);// eliminar pipe de cada cliente
+        if(PIDs[i]!=-1)
+            kill (PIDs[i], SIGINT);// enviar la señal para elminitR cada cliente conectado
+    }
+    exit(1);
+}
 //Funciones
 int CrearPipeLectura(char *pipe);
 int CrearPipeEscritura(char *pipe);
@@ -77,6 +92,7 @@ int main(int argc,char **argv)
     //Uso de Hilos y Signals
     pthread_t thread1, thread2;
     signal (SIGALRM, (sighandler_t)signalHandler);
+    signal (SIGINT, (sighandler_t)signalHandlerKill);
     
     if (pthread_create(&thread1, NULL, (void*)OperacionGestor,NULL)) 
     {
@@ -97,7 +113,6 @@ int main(int argc,char **argv)
 /// @brief Función que se encarga de realizar todas las operaciones del gestor
 void *OperacionGestor(void *a)
 {
-    int fd, fd1, p;//Variables para el pipe
     int i,j;// iterador
     user cliente;
     tw tweet;
@@ -152,12 +167,7 @@ void *OperacionGestor(void *a)
                         perror("Error al leer el pipe");
                         exit(EXIT_FAILURE);
                     }
-                    PIDs[cliente.id-1] = atoi(token); 
-                    printf("id: %d, pos: %d, pid : %d ", cliente.id, cliente.id -1, PIDs[cliente.id-1]);
-                     //for ( i = 0; i < argumentos.num; i++)
-                   // {
-                     //   printf("pid : %d ", PIDs[i]);
-                   // }
+                    
                     bn = 0;
                     for(i=0; i<argumentos.num; i++)
                     {
@@ -178,6 +188,12 @@ void *OperacionGestor(void *a)
                     fd1 = CrearPipeEscritura(cliente.pipe);
                     if(bn)
                     {
+                        PIDs[cliente.id-1] = atoi(token); //guardar el PID del cliente
+                    printf("id: %d, pos: %d, pid : %d ", cliente.id, cliente.id -1, PIDs[cliente.id-1]);
+                     //for ( i = 0; i < argumentos.num; i++)
+                   // {
+                     //   printf("pid : %d ", PIDs[i]);
+                   // }
                         tws tweetsAlmacenados;
                         tweetsAlmacenados.cantTweets = clientes[id].cantTweets;
                         for(i = 0; i < clientes[id].cantTweets; i++)
@@ -191,11 +207,11 @@ void *OperacionGestor(void *a)
                         {
                             tweetsEnviados+=clientes[id].cantTweets;// incrementar los tweets enviados
                             clientes[id].cantTweets=0;//reiniciar la cantidad de tweets almacenados
-                            printf("Envindo Tweets pendientes:\n");
+                            printf("%d Tweets pendientes:\n", tweetsAlmacenados.cantTweets);
+                            printf("Cantidad:\n");
                             for ( j = 0; j < tweetsAlmacenados.cantTweets; j++)
                                 printf("id %d tweet: %s\n",  tweetsAlmacenados.tweets[j].id, tweetsAlmacenados.tweets[j].mensaje);
-                        }
-                             
+                        }                         
                     }
                     else
                     {
@@ -275,7 +291,7 @@ void *OperacionGestor(void *a)
                            //printf("%d pid : %d \n", i, PIDs[i]);
                            if(clientes[i].seguidos[tweet.id-1] == 1){ //seguidores del cliente que envio el tweet;
                                 //printf("id seguidor: %d",clientes[i].id);
-                                printf("id %d, se guarda el tweet %s\n", clientes[i].id, PIDs[i], tweet.mensaje);
+                                printf("id %d, se guarda el tweet %s\n", clientes[i].id, tweet.mensaje);
                                 clientes[i].tweets[clientes[i].cantTweets] = tweet;// agregar el tweet al arreglo 
                                 clientes[i].cantTweets++; // incrementar la cantidad de tweets
                                 if(clientes[i].enLinea && PIDs[i] != -1)// verificar que está en linea
@@ -336,7 +352,7 @@ void *OperacionGestor(void *a)
                     } 
                     close(fd1);
                     break;
-            case 5: printf("Desconectado");
+            case 5: printf("\nDesconectando...\n");
                     char buffer3[3];
                     p = read(fd, buffer3, 3);
                     if (p == -1) { 
@@ -345,10 +361,11 @@ void *OperacionGestor(void *a)
                     }
                     
                     int idSalir = atoi(buffer3);
-                    unlink(clientes[idSalir].pipe);//eliminar el pipe
+                    unlink(clientes[idSalir].pipe);//eliminar el pipe del cliente
                     clientes[idSalir-1].enLinea = 0;//poner fuera de linea
-                    printf("id %d Desconectado",idSalir);
-                    //kill (PIDs[idSalir-1], SIGKILL);//terminar el proceso con una señal
+                    printf("id %d Desconectado\n",idSalir);
+                    usuariosConectados--;
+                  //  kill (PIDs[idSalir-1], SIGINT);//terminar el proceso con una señal
                     break;
 
         }

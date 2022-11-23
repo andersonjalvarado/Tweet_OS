@@ -33,11 +33,31 @@ typedef void (*sighandler_t)(int);
 sighandler_t signalHandler (void)
 {
   if (tipo == 1)//Modo Desacoplado
-    printf ("\nUn usuario que sigues publico un nuevo Tweet \n");
+    printf("\n \n");
+    printf("\n    _________\n");
+    printf("   %c_  ___   %c\n",47,92);
+    printf("  %c@ %c%c@  %c   %c\n",47,92,47,92,92);
+    printf("  %c__%c%c___%c   %c\n",92,47,92,47,47);
+    printf("   %c_%c%c______%c\n",92,92,47,47);
+    printf("   %c     %c%c%c%c%c%c    Un usuario que sigues\n",47,47,92,92,92,92,92);
+    printf("  |     |%c%c%c%c%c%c   publico un nuevo Tweet \n",92,92,92,92,92,92);
+    printf("   %c     %c%c%c%c%c%c\n",92,92,92,92,92,92,92);
+    printf("    %c______%c%c%c%c%c\n",92,47,92,92,92,92);
+  //  printf ("\nUn usuario que sigues publico un nuevo Tweet \n");
   if(tipo == 0)//Modo Acoplado
   {
     read(fd1, mensaje, 200);
-    printf("\nNuevo Tweet: %s\n",mensaje);
+    printf("\n \n");
+    printf("\nNuevo Tweet:\n");
+    printf("\n    _________\n");
+    printf("   %c_  ___   %c\n",47,92);
+    printf("  %c@ %c%c@  %c   %c\n",47,92,47,92,92);
+    printf("  %c__%c%c___%c   %c\n",92,47,92,47,47);
+    printf("   %c_%c%c______%c\n",92,92,47,47);
+    printf("   %c     %c%c%c%c%c%c\n",47,47,92,92,92,92,92);
+    printf("  |     |%c%c%c%c%c%c   %s \n",92,92,92,92,92,92,mensaje);
+    printf("   %c     %c%c%c%c%c%c\n",92,92,92,92,92,92,92);
+    printf("    %c______%c%c%c%c%c\n",92,47,92,92,92,92);
     close(fd1);
   }
 }
@@ -129,13 +149,17 @@ int main(int argc, char **argv)
     int i; //iterador
     if(respuesta)
     {     
-    printf("\nTweets: %d \n",tweetsAlmacenados.cantTweets);   //mensajes recuperados mientras estaba desconectado
+    printf("\nCantidad de Tweets: %d \n",tweetsAlmacenados.cantTweets);   //mensajes recuperados mientras estaba desconectado
       if(tweetsAlmacenados.cantTweets > 0)
       {
-          printf("\n\n Tweets Recuperados: \n");
+          printf("\nTweets Recuperados: \n");
           for (i = 0; i < tweetsAlmacenados.cantTweets; i++)
           {
+            
+            
             printf("id %d tweet: %s\n",  tweetsAlmacenados.tweets[i].id, tweetsAlmacenados.tweets[i].mensaje);
+
+            
           }
       }
       else
@@ -197,12 +221,12 @@ int main(int argc, char **argv)
                   write(fd,&tweet,sizeof(tweet));// enviar tweet                 
                   break;
           case 4:	char recuperar[6];
-                  user clienteRecuperado;
-                  printf("\n\n Recuperando Tweets... \n");
+                  user clienteRecuperado;          
                   sprintf(recuperar, "id,%d", cliente.id);
                   write(fd,&opcion,sizeof(int));//Envio de la opcion "Opcion 4(Recuperar tweet)"
                   write(fd, recuperar, 6);//Envio de la solicitud
                   fd1 = CrearPipeLectura(cliente.pipe);//pipe lectura con la respuesta
+                  printf("\n\n Recuperando Tweets... \n");
                   r = read(fd1,&clienteRecuperado,sizeof(clienteRecuperado));
                   if (r == -1)
                   {
@@ -218,8 +242,12 @@ int main(int argc, char **argv)
                   
                   close(fd1);
                   break;
-          case 5: salir=1;
+          case 5: char buffer3[3];
+                  sprintf(buffer3, "%d", cliente.id);
+                  write(fd,&opcion,sizeof(int));//Envio de la opcion "Opcion 5(Salir)"
+                  write(fd, buffer3, 3);
                   printf("\n\n\t VUELVA PRONTO!\n\n");
+                   return 0;
                   break;
           default:printf("\n\n\t OPCION INVALIDA! Intente de nuevo\n\n");
                   break;
