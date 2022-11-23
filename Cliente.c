@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include "Usuario.h"
 #include "Tweet.h"
+#include "Tweets.h"
 #include "ExtraerArgumentos.h"
 
 //Funciones
@@ -35,7 +36,6 @@ sighandler_t signalHandler (void)
     printf ("\nUn usuario que sigues publico un nuevo Tweet \n");
   if(tipo == 0)//Modo Acoplado
   {
-    printf("\nPIPe:%s\n", cliente.pipe);
     read(fd1, mensaje, 200);
     printf("\nNuevo Tweet: %s\n",mensaje);
     close(fd1);
@@ -99,9 +99,18 @@ int main(int argc, char **argv)
       perror("proceso escritor:");
       exit(1);
     }
+    //leer datos enviados por el gestor
+    tws tweetsAlmacenados;
     int respuesta; 
     fd1 = CrearPipeLectura(cliente.pipe);
-    int r = read(fd1, &respuesta, sizeof(respuesta));
+    
+    int r = read(fd1, &tweetsAlmacenados, sizeof(tweetsAlmacenados));
+    if (r == -1)
+    {
+      perror("proceso lector");
+      exit(1);
+    }
+    r = read(fd1, &respuesta, sizeof(respuesta));
     if (r == -1)
     {
       perror("proceso lector");
@@ -119,7 +128,19 @@ int main(int argc, char **argv)
     char solicitud[10];
     int i; //iterador
     if(respuesta)
-    {
+    {     
+    printf("\nTweets: %d \n",tweetsAlmacenados.cantTweets);   //mensajes recuperados mientras estaba desconectado
+      if(tweetsAlmacenados.cantTweets > 0)
+      {
+          printf("\n\n Tweets Recuperados: \n");
+          for (i = 0; i < tweetsAlmacenados.cantTweets; i++)
+          {
+            printf("id %d tweet: %s\n",  tweetsAlmacenados.tweets[i].id, tweetsAlmacenados.tweets[i].mensaje);
+          }
+      }
+      else
+        printf("\n\n Tus seguidores no han enviado Tweets mientras estabas desconectado\n");
+      
       do{
         opcion = Menu(tipo);
         if(tipo==0 && opcion==5)

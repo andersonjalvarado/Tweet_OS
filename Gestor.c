@@ -11,6 +11,7 @@
 #include "ExtraerArgumentos.h"
 #include "Usuario.h"
 #include "Tweet.h"
+#include "Tweets.h"
 #define MAX_Usuarios 80
 
 //Variables compartidas
@@ -97,7 +98,7 @@ int main(int argc,char **argv)
 void *OperacionGestor(void *a)
 {
     int fd, fd1, p;//Variables para el pipe
-    int i;// iterador
+    int i,j;// iterador
     user cliente;
     tw tweet;
     mode_t fifo_mode = S_IRUSR|S_IWUSR;
@@ -172,19 +173,27 @@ void *OperacionGestor(void *a)
                         }
                     }
                     int id = cliente.id;
-                    user clienteTweets = clientes[id];
+                   
+
                     fd1 = CrearPipeEscritura(cliente.pipe);
                     if(bn)
                     {
+                        tws tweetsAlmacenados;
+                        tweetsAlmacenados.cantTweets = clientes[id].cantTweets;
+                        for(i = 0; i < clientes[id].cantTweets; i++)
+                            tweetsAlmacenados.tweets[i] = clientes[id].tweets[i];    
+                        
                         respuesta = 1;
-                        //write (fd1, &clienteTweets, sizeof(clienteTweets));
+                        write (fd1, &tweetsAlmacenados, sizeof(tweetsAlmacenados));
                         write (fd1, &respuesta, sizeof(respuesta));
                         write(fd1, &tipo, sizeof(int));
-                       if(clienteTweets.cantTweets > 0)
+                       if(clientes[id].cantTweets > 0)
                         {
-                            tweetsEnviados+=clienteTweets.cantTweets;// incrementar los tweets enviados
+                            tweetsEnviados+=clientes[id].cantTweets;// incrementar los tweets enviados
                             clientes[id].cantTweets=0;//reiniciar la cantidad de tweets almacenados
-                            printf("Envindo Tweets pendientes\n");
+                            printf("Envindo Tweets pendientes:\n");
+                            for ( j = 0; j < tweetsAlmacenados.cantTweets; j++)
+                                printf("id %d tweet: %s\n",  tweetsAlmacenados.tweets[j].id, tweetsAlmacenados.tweets[j].mensaje);
                         }
                              
                     }
@@ -266,12 +275,12 @@ void *OperacionGestor(void *a)
                            //printf("%d pid : %d \n", i, PIDs[i]);
                            if(clientes[i].seguidos[tweet.id-1] == 1){ //seguidores del cliente que envio el tweet;
                                 //printf("id seguidor: %d",clientes[i].id);
-                                printf("id %d - pid %d, se guarda el tweet %s\n", clientes[i].id, PIDs[i], tweet.mensaje);
+                                printf("id %d, se guarda el tweet %s\n", clientes[i].id, PIDs[i], tweet.mensaje);
                                 clientes[i].tweets[clientes[i].cantTweets] = tweet;// agregar el tweet al arreglo 
                                 clientes[i].cantTweets++; // incrementar la cantidad de tweets
                                 if(clientes[i].enLinea && PIDs[i] != -1)// verificar que está en linea
                                 { 
-                                    printf("pid %d\n", PIDs[i]);
+                                   // printf("pid %d\n", PIDs[i]);
                                     kill (PIDs[i], SIGUSR1);// enviar la señal para notificar que tienen un nuevo tweet
                                 }
                             }
